@@ -1,0 +1,21 @@
+# --- Block 1: Paths & System Settings ---
+# Use "ffmpeg" in PATH, or provide the full path.
+paths:
+    bin_path: "ffmpeg"  
+    output_directory: "../downloads"
+
+# --- Block 2: Capture Settings (Stream Download) ---
+# Set 'capture_raw' to true for fast, lossless raw stream.
+# If false, it will use the transcoding settings below.
+transcoding:
+    capture_raw: false      # Fast, lossless stream copy (no re-encoding)
+    extension: ".mp4"
+    video_codec: "libx265"  # HEVC for high compression
+    audio_codec: "copy"     # 'copy' avoids re-encoding or set to 'aac'
+    crf_value: 28   # (e.g. 24) = Higher Quality, (e.g. 32) = Lower Quality
+
+# --- Block 3: Video Library ---
+# List of videos to download/convert
+# Format: "Video Title": "M3U8 URL"
+videos:
+    "Drone Landscape": "https://videocdn.cdnpk.net/videos/2a0150a6-4ef0-4729-822d-5e9a2b5bb9cb/horizontal/downloads/1080p.mp4?filename=463621_Drone_Landscape_Drone_Forest_1920x1080.mp4&token=exp=1775894076~hmac=9d5c297e034726925ee9e7fd97e4ca700355c79fc31a4395e401e4e9fc84c551"
