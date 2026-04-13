@@ -16,7 +16,13 @@
                  "zsh-syntax-highlighting",
                  "git"
             ]
+        },
+        "ghcr.io/devcontainer-community/devcontainer-features/astral.sh-uv": {
+            "version": "latest"
         }
+    },
+    "remoteEnv": {
+        "LOG_LEVEL": "INFO"
     },
     "customizations": {
         "vscode": {
@@ -40,6 +46,7 @@
             }
         }
     },
-    "postCreateCommand": "if [ -f requirements.txt ]; then pip install -r requirements.txt; fi",
-    "shutdownAction": "stopContainer"
+    "forwardPorts": [],
+    "shutdownAction": "stopContainer",
+    "postCreateCommand": "uv sync --no-dev"
 }
