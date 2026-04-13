@@ -1,0 +1,45 @@
+{
+    "name": "Python Toolkit",
+    "build": {
+        "dockerfile": "Dockerfile"
+    },
+    "features": {
+        "ghcr.io/devcontainers/features/python:1": {
+            "version": "3.12"
+        },
+        "ghcr.io/devcontainers/features/common-utils:2": {
+            "installZsh": "true",
+            "configureZshAsDefaultShell": "true",
+            "installOhMyZsh": "true",
+            "installZshPlugins": [
+                 "zsh-autosuggestions",
+                 "zsh-syntax-highlighting",
+                 "git"
+            ]
+        }
+    },
+    "customizations": {
+        "vscode": {
+            "extensions": [
+                "charliermarsh.ruff",
+                "editorconfig.editorconfig",
+                "streetsidesoftware.code-spell-checker"
+            ],
+            "settings": {
+                "terminal.integrated.defaultProfile.linux": "zsh",
+                "python.defaultInterpreterPath": "${containerEnv:PYTHON_PATH}",
+                "python.analysis.diagnosticMode": "openFilesOnly",
+                "[python]": {
+                    "editor.defaultFormatter": "charliermarsh.ruff",
+                    "editor.formatOnSave": true,
+                    "editor.codeActionsOnSave": {
+                        "source.fixAll": "explicit",
+                        "source.organizeImports": "explicit"
+                    }
+                }
+            }
+        }
+    },
+    "postCreateCommand": "if [ -f requirements.txt ]; then pip install -r requirements.txt; fi",
+    "shutdownAction": "stopContainer"
+}
