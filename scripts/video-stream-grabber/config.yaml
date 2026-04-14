@@ -1,0 +1,21 @@
+# --- Block 1: Paths & System Settings ---
+# Use "ffmpeg" in PATH, or provide the full path.
+paths:
+    bin_path: "ffmpeg"
+    output_directory: "../downloads"
+
+# --- Block 2: Capture Settings (Stream Download) ---
+# Set 'capture_raw' to true for fast, lossless raw stream.
+# If false, it will use the transcoding settings below.
+transcoding:
+    capture_raw: false      # Fast, lossless stream copy (no re-encoding)
+    extension: ".mp4"
+    video_codec: "libx265"  # HEVC for high compression
+    audio_codec: "copy"     # 'copy' avoids re-encoding or set to 'aac'
+    crf_value: 28   # (e.g. 24) = Higher Quality, (e.g. 32) = Lower Quality
+
+# --- Block 3: Video Library ---
+# List of videos to download/convert
+# Format: "Video Title": "M3U8 URL or Direct Video URL"
+videos:
+    "Push-ups in a Gym": "https://videocdn.cdnpk.net/videos/6b1d7eba-ef72-5d10-9546-8d3a64025493/horizontal/previews/clear/large.mp4?token=exp=1776179629~hmac=0dda409360dbb0d20edef7ef2949289bee5bf89100bd4f7811ecc105d764a3d9"
