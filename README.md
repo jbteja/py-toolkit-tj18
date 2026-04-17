@@ -22,11 +22,10 @@ Useful scripts often end up scattered across different directories, making them 
 - 📦 **Modular Scripts** - Each utility is self-contained and can be imported or used independently.
 - 🐳 **Dev Container Ready** - Pre-configured environment for VS Code, ensuring "it works on any machine".
 - 🧹 **Clean Code** - Configured with Ruff for fast linting and formatting.
-- 📝 **Documentation-First** - Every script mostly includes metadata and clear instructions for use.
 
-## 🏗️ Template Creation
+## 📝 Template
 
-The end goal is to design a "mature" starting point for Python projects, where it solves common headaches of initial project setup by providing pre-configured standards.
+Also, the idea is to design a "mature" starting point for Python projects, where it solves common headaches of initial setup by providing pre-configured standards.
 
 **Standardized**:
 

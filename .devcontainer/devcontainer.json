@@ -29,7 +29,8 @@
             "extensions": [
                 "charliermarsh.ruff",
                 "editorconfig.editorconfig",
-                "streetsidesoftware.code-spell-checker"
+                "streetsidesoftware.code-spell-checker",
+                "DavidAnson.vscode-markdownlint"
             ],
             "settings": {
                 "terminal.integrated.defaultProfile.linux": "zsh",
@@ -42,6 +43,16 @@
                         "source.fixAll": "explicit",
                         "source.organizeImports": "explicit"
                     }
+                },
+                "[markdown]": {
+                    "editor.defaultFormatter": "DavidAnson.vscode-markdownlint",
+                    "editor.formatOnSave": true,
+                    "editor.codeActionsOnSave": {
+                        "source.fixAll.markdownlint": "explicit"
+                    }
+                },
+                "markdownlint.config": {
+                    "MD033": false
                 }
             }
         }
