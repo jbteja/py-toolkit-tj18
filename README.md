@@ -9,7 +9,7 @@
 
 ## 🚀 Overview
 
-A structured collection of reusable Python scripts designed for automation, system utilities, and everyday engineering tasks. This repo is built with a focus on modular configurations, isolated dependencies, and a portable Dev Container setup to ensure a consistent environment across any machine.
+A collection of reusable Python scripts designed for automation, system utilities, and everyday engineering tasks. This repo is built with a focus on modular configurations, isolated dependencies, and a portable Dev Container setup to ensure a consistent environment across any machine.
 
 ## 💡 Motivation
 
