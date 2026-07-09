@@ -1,18 +1,19 @@
 #!/usr/bin/env python
 
 import argparse
+import inspect
 import sys
-import time
 from pathlib import Path
 from typing import Any
 
 import yaml
+
 try:
     from pymodbus.client import ModbusSerialClient
     from pymodbus.exceptions import ModbusException
 
 except ImportError:
-    print("Error: pymodbus library is required. Install with 'pip install pymodbus'")
+    print("Error: pymodbus library is required, Install with 'pip install pymodbus'")
     sys.exit(1)
 
 # Parent directory to sys.path for imports
@@ -21,199 +22,6 @@ from utils.logger import get_logger
 
 logger = get_logger(__name__)
 CONFIG_PATH = Path(__file__).parent / "config.yaml"
-
-class RTUController:
-    """Motor controller interface."""
-
-    def __init__(self, port, config, slave_id=None, baudrate=None):
-        self.port = port
-        self.config = config
-        self.comm_params = config.get("communication", {})
-        self.modbus_cfg = config.get("modbus", {})
-        self.registers = config.get("registers", {})
-        self.commands = config.get("commands", {})
-
-        # Override baudrate if provided
-        if baudrate:
-            self.comm_params["baudrate"] = baudrate
-
-        self.slave_id = slave_id or self.modbus_cfg.get("default_slave_id", 1)
-        self.input_registers_supported = True
-
-        # Build client
-        self.client = ModbusSerialClient(
-            port=self.port,
-            baudrate=self.comm_params.get("baudrate", 9600),
-            parity=self.comm_params.get("parity", "N"),
-            stopbits=self.comm_params.get("stop_bits", 1),
-            bytesize=self.comm_params.get("data_bits", 8),
-            timeout=self.comm_params.get("timeout", 1),
-        )
-
-    def connect(self):
-        """Establish connection to the controller."""
-        if self.client.connect():
-            logger.info(f"Connected on port {self.port} (slave ID {self.slave_id})")
-            return True
-        else:
-            logger.error("Failed to connect")
-            return False
-
-    def close(self):
-        """Close the serial connection."""
-        self.client.close()
-        logger.info("Connection closed")
-
-    # def _read_register(self, reg_type, reg_addr, scale=1):
-    #     """Read a single register and return scaled value."""
-    #     try:
-    #         if reg_type == "holding":
-    #             result = self.client.read_holding_registers(reg_addr, 1, slave=self.slave_id)
-    #         elif reg_type == "input":
-    #             result = self.client.read_input_registers(reg_addr, 1, slave=self.slave_id)
-    #         else:
-    #             raise ValueError(f"Unknown register type: {reg_type}")
-
-    #         if result.isError():
-    #             logger.error(f"Modbus error reading {reg_type} register {reg_addr}: {result}")
-    #             return None
-    #         return result.registers[0] * scale
-
-    #     except ModbusException as e:
-    #         logger.error(f"Exception reading register: {e}")
-    #         return None
-
-    # def _write_register(self, reg_addr, value, scale=1):
-    #     """Write a value to a holding register."""
-    #     try:
-    #         raw_value = int(value / scale)
-    #         result = self.client.write_register(reg_addr, raw_value, slave=self.slave_id)
-    #         if result.isError():
-    #             logger.error(f"Modbus error writing to register {reg_addr}: {result}")
-    #             return False
-    #         return True
-
-    #     except ModbusException as e:
-    #         logger.error(f"Exception writing register: {e}")
-    #         return False
-
-    def _read_register(self, reg_type, reg_addr, scale=1):
-        """Read a single register and return scaled value."""
-        try:
-            kwargs = {"count": 1, "device_id": self.slave_id}
-            if reg_type == "holding":
-                result = self.client.read_holding_registers(reg_addr, **kwargs)
-            elif reg_type == "input":
-                result = self.client.read_input_registers(reg_addr, **kwargs)
-            else:
-                raise ValueError(f"Unknown register type: {reg_type}")
-
-            if result.isError():
-                if reg_type == "input" and getattr(result, "exception_code", None) == 1:
-                    if self.input_registers_supported:
-                        logger.warning(
-                            "Device rejected input-register reads (illegal function). "
-                            "Skipping remaining input registers."
-                        )
-                        self.input_registers_supported = False
-                    return None
-                logger.error(f"Modbus error reading {reg_type} register {reg_addr}: {result}")
-                return None
-            return result.registers[0] * scale
-        except Exception as e:
-            logger.error(f"Exception reading register: {e}")
-            return None
-
-    def _write_register(self, reg_addr, value, scale=1):
-        """Write a value to a holding register."""
-        try:
-            raw_value = int(value / scale)
-            result = self.client.write_register(reg_addr, raw_value, device_id=self.slave_id)
-            if result.isError():
-                logger.error(f"Modbus error writing to register {reg_addr}: {result}")
-                return False
-            return True
-        except ModbusException as e:
-            logger.error(f"Exception writing register: {e}")
-            return False
-
-    def read_all_registers(self):
-        """Read all defined holding and input registers, log them."""
-        logger.info("=== Reading all registers ===")
-
-        # Holding registers
-        for reg in self.registers.get("holding", []):
-            value = self._read_register("holding", reg["addr"], reg.get("scale", 1))
-            if value is not None:
-                unit = reg.get("unit", "")
-                enum = reg.get("enum", {})
-                if enum and int(value) in enum:
-                    display = f"{value} ({enum[int(value)]})"
-                else:
-                    display = f"{value}{unit}"
-
-                if reg["name"] == "device_address":
-                    actual_slave = int(value) >> 8
-                    display = f"{display} (slave id {actual_slave})"
-
-                logger.info(f"  {reg['name']:20} = {display}")
-
-        # Input registers
-        if self.input_registers_supported:
-            for reg in self.registers.get("input", []):
-                value = self._read_register("input", reg["addr"], reg.get("scale", 1))
-                if value is not None:
-                    unit = reg.get("unit", "")
-                    logger.info(f"  {reg['name']:20} = {value}{unit}")
-        else:
-            logger.info("Skipping input registers because device indicated they are not supported")
-
-        logger.info("=== End of register dump ===")
-
-    def execute_command(self, cmd_name, **kwargs):
-        """Execute a named command from the YAML definition."""
-        cmd = self.commands.get(cmd_name)
-        if not cmd:
-            logger.error(f"Command '{cmd_name}' not found in configuration")
-            return False
-
-        sequence = cmd.get("sequence", [])
-        for step in sequence:
-            reg_name = step["register"]
-            value_template = step["value"]
-
-            # Find register definition
-            reg_def = None
-            for reg in self.registers.get("holding", []):
-                if reg["name"] == reg_name:
-                    reg_def = reg
-                    break
-            if not reg_def:
-                logger.error(f"Register '{reg_name}' not found for command '{cmd_name}'")
-                return False
-
-            # Substitute parameters
-            if isinstance(value_template, str) and "{{" in value_template:
-                for k, v in kwargs.items():
-                    value_template = value_template.replace(f"{{{{ {k} }}}}", str(v))
-                # Evaluate simple arithmetic (safe for int expressions)
-                try:
-                    value = eval(value_template, {"__builtins__": {}}, kwargs)  # nosec
-                except Exception as e:
-                    logger.error(f"Error evaluating value template '{value_template}': {e}")
-                    return False
-            else:
-                value = value_template
-
-            # Write to register
-            success = self._write_register(reg_def["addr"], value, reg_def.get("scale", 1))
-            if not success:
-                logger.error(f"Failed to execute step: write {reg_name}={value}")
-                return False
-            logger.info(f"Command '{cmd_name}': wrote {reg_name}={value}")
-
-        logger.info(f"Command '{cmd_name}' executed successfully")
-        return True
 
 
 def load_config(path: Path = CONFIG_PATH) -> dict[str, Any]:
@@ -231,8 +39,9 @@ def load_config(path: Path = CONFIG_PATH) -> dict[str, Any]:
 
 
 def check_port_available(port) -> bool:
-    """Check if a serial port exists and can be opened (simple test)."""
+    """Check if a serial port exists and can be opened"""
     import serial
+
     try:
         ser = serial.Serial(port, timeout=0.1)
         ser.close()
@@ -242,103 +51,437 @@ def check_port_available(port) -> bool:
         return False
 
 
-def main():
-    parser = argparse.ArgumentParser(description="Motor Controller Tool")
-    parser.add_argument("--port", required=True, help="Serial port (e.g., COM3, /dev/ttyUSB0)")
-    parser.add_argument("--device", default="rmcs-3001", help="Device type (matches config section)")
-    parser.add_argument("--slave-id", type=int, help="Modbus slave ID (overrides config)")
-    parser.add_argument("--baudrate", type=int, help="Baud rate (overrides config)")
-    parser.add_argument("--action", choices=["read", "enable", "brake", "stop", "set_speed_open", "set_speed_closed",
-                                             "set_mode_analog_open", "set_mode_digital_closed", "set_mode_digital_open",
-                                             "set_current_limit", "save_config", "sequence"],
-                        default="read", help="Action to perform")
-    parser.add_argument("--speed", type=int, help="Speed value (for set_speed_open or set_speed_closed)")
-    parser.add_argument("--current", type=float, help="Current limit in Amps (for set_current_limit)")
+class BaseController:
+    """Handles the raw Modbus serial connection"""
 
-    args = parser.parse_args()
+    def __init__(self, port: str, slave_id: int, config: dict[str, Any]):
+        self.port = port
+        self.slave_id = slave_id
+        self.config = config
 
-    # Check port availability
-    if not check_port_available(args.port):
-        logger.error(f"Port {args.port} is not available or cannot be opened")
-        sys.exit(1)
+        # Build client
+        comm = config.get("communication", {})
+        self.client = ModbusSerialClient(
+            port=port,
+            baudrate=comm.get("baudrate", 9600),
+            parity=comm.get("parity", "N"),
+            stopbits=comm.get("stopbits", 1),
+            bytesize=comm.get("bytesize", 8),
+            timeout=comm.get("timeout", 1),
+        )
 
-    full_config = load_config()
-    config = full_config.get(args.device)
-    if not config:
-        logger.error("Configuration missing for device '%s'", args.device)
-        sys.exit(1)
+    def connect(self):
+        """Establish connection to the controller"""
+        if self.client.connect():
+            logger.info(f"Connected on port {self.port} (slave ID {self.slave_id})")
+            return True
+        else:
+            logger.error("Failed to connect")
+            return False
 
-    # Create controller instance
-    controller = RTUController(
-        port=args.port,
-        config=config,
-        slave_id=args.slave_id,
-        baudrate=args.baudrate
+    def close(self):
+        """Close the serial connection"""
+        self.client.close()
+        logger.info("Connection closed")
+
+
+class RhinoRMCS3001(BaseController):
+    """Contains the specific logic and overrides for RMCS-3001-V2"""
+
+    def __init__(self, port: str, slave_id: int, config: dict[str, Any]):
+        super().__init__(port, slave_id, config)
+        self.registers = config.get("registers", {})
+        self._slave_param = self.detect_slave_param()
+
+    def detect_slave_param(self) -> str:
+        """Inspects the active pymodbus method signature select the correct parameter"""
+        try:
+            sig = inspect.signature(self.client.read_holding_registers)
+            for param in ["device_id", "slave", "unit"]:
+                if param in sig.parameters:
+                    return param
+
+        except Exception:
+            logger.warning(
+                "Failed to inspect pymodbus method signature, using fallback"
+            )
+            pass
+        return "slave"  # Safe backward-compatible fallback
+
+    def _read_registers(self, address: int, count: int = 1):
+        """Read holding registers using cached signature"""
+        kwargs = {self._slave_param: self.slave_id}
+        return self.client.read_holding_registers(address, count=count, **kwargs)
+
+    def _write_register(self, address: int, value: int):
+        """Write a single register using cached signature"""
+        kwargs = {self._slave_param: self.slave_id}
+        return self.client.write_register(address=address, value=value, **kwargs)
+
+    def parse_signed_value(self, val: int, reg_data: dict[str, Any]) -> int:
+        """Converts unsigned 16-bit words to signed integers if required by config"""
+        reg_range = reg_data.get("range", [])
+        # Check if the register configuration allows negative bounds
+        if (reg_range and reg_range[0] < 0) and val > 32767:
+            return val - 65536
+        return val
+
+    def print_verbose(self):
+        """Read and print the current state of the controller"""
+        width = 50
+        logger.info("=" * width)
+        logger.info("Controller Status".center(width))
+        logger.info("=" * width)
+
+        for reg_name, reg_data in self.registers.items():
+            if "r" in reg_data.get("access", ""):
+                address = reg_data.get("address")
+                if address is None:
+                    continue
+
+                try:
+                    response = self._read_registers(address, 1)
+
+                    if response and not response.isError():
+                        raw_val = response.registers[0]
+                        # Apply signed parsing adjustments
+                        val = self.parse_signed_value(raw_val, reg_data)
+
+                        display_name = reg_name.replace("_", " ").title()
+                        logger.info(
+                            f"• {display_name} Value: {val} (Hex: 0x{raw_val:04X})"
+                        )
+                        logger.debug(f"  - Desc:  {reg_data.get('description', '')}")
+
+                    else:
+                        # Extract explicit Modbus failure codes if available
+                        err_detail = getattr(
+                            response, "message", "Modbus Error Response"
+                        )
+                        logger.error(
+                            f"• {reg_name}: ERROR reading address 0x{address:02X} -> {err_detail}\n"
+                        )
+
+                except Exception as e:
+                    logger.error(f"• {reg_name}: {e}\n")
+
+    def set_control(
+        self,
+        mode: int,
+        enable: bool = True,
+        brake: bool = False,
+        direction_ccw: bool = False,
+    ):
+        """Builds the 16-bit packet and writes it to the register"""
+        # Control Byte (Lower 8 bits)
+        control_byte = 0x00
+        if enable:
+            control_byte |= 1 << 0
+
+        if brake:
+            control_byte |= 1 << 1
+
+        if direction_ccw:
+            control_byte |= 1 << 3
+
+        # Mode Byte (Upper 8 bits)
+        mode_byte = (mode & 0xFF) << 8
+
+        # Final 16-bit payload
+        payload = mode_byte | control_byte
+        address = self.config["registers"]["control_mode"]["address"]
+
+        logger.debug(f"Control packet: 0x{payload:04X} to address 0x{address:02X}")
+        logger.info(
+            f"Setting -> m: {mode}, e: {enable}, brk: {brake}, dir: {direction_ccw}"
+        )
+        response = self._write_register(address, payload)
+
+        if response.isError():
+            logger.error("Failed to send control command: %s", response)
+
+        else:
+            logger.info("Successfully sent control command")
+
+    def set_speed(self, speed: int, mode: int):
+        """
+        Sets the target speed or PWM value based on operating mode
+        - Mode 1 (Digital Closed Loop Mode): Writes to the frequency register (0x06)
+        - Mode 2/3 (Digital Open Loop / Analog Closed Loop): Writes to the PWM register (0x04)
+        """
+        if mode == 1:
+            reg_key = "frequency"
+            default_address = 0x06
+
+        elif mode in [2, 3]:
+            reg_key = "pwm"
+            default_address = 0x04
+
+        else:
+            logger.warning(f"Speed tracking not explicitly configured for mode {mode}")
+            return  # No action for unsupported modes
+
+        # Fetch configurations from yaml if available
+        reg_data = self.registers.get(reg_key, {})
+        address = reg_data.get("address", default_address)
+        reg_range = reg_data.get("range")
+
+        # Validate bounds from config file safely
+        if reg_range and not (reg_range[0] <= speed <= reg_range[1]):
+            logger.warning(
+                f"Speed: {speed} value is outside the configured boundaries {reg_range}"
+            )
+
+        payload = speed & 0xFFFF  # Standardize to 16-bit unsigned
+        logger.debug(
+            f"Writing {speed} value (Hex: 0x{payload:04X}) to '{reg_key}' register at 0x{address:02X}"
+        )
+
+        response = self._write_register(address, payload)
+        if response and response.isError():
+            logger.error(f"Failed to set target speed on address 0x{address:02X}")
+
+        else:
+            logger.info(f"Successfully sent target speed/value to {speed}")
+
+    def set_limit(self, limit: int, mode: int):
+        """
+        Sets the movement or distance length limit register (0x0C)
+        Converts negative integers to 16-bit unsigned representations
+        """
+        if mode != 1:
+            logger.warning(
+                f"Movement limits are typically restricted to Mode 1, Mode provided: {mode}"
+            )
+            return  # No action for unsupported modes
+
+        reg_data = self.registers.get("movement_limit", {})
+        address = reg_data.get("address", 0x0C)
+        reg_range = reg_data.get("range", [-32767, 32767])
+
+        if not (reg_range[0] <= limit <= reg_range[1]):
+            logger.warning(
+                f"Movement limit {limit} falls outside valid range boundaries {reg_range}"
+            )
+
+        # Fast Two's complement conversion using bitwise masking
+        payload = limit & 0xFFFF
+        logger.debug(
+            f"Writing limit {limit} (Unsigned Hex: 0x{payload:04X}) to address 0x{address:02X}"
+        )
+
+        response = self._write_register(address, payload)
+        if response and response.isError():
+            logger.error(f"Failed to set movement limit on address 0x{address:02X}")
+        else:
+            logger.info("Successfully sent movement limit to %d", limit)
+
+    def set_slave_id(self, new_id: int):
+        """Updates the slave ID for future transactions"""
+        try:
+            if new_id == self.slave_id:
+                logger.info(
+                    "New ID is same as the current ID (%d), no change made", new_id
+                )
+                return
+
+            # Fetch range bounds from config
+            min_val, max_val = self.registers["device_id"]["range"]
+
+            # Properly validate the integer range
+            if not (min_val <= new_id <= max_val):
+                logger.error(
+                    "New ID %d is outside the valid range %s",
+                    new_id,
+                    self.registers["device_id"]["range"],
+                )
+                return
+
+            # Format the value to match the controller's requirement
+            register_id = (new_id << 8) | 0xFF
+
+            # Write the new slave ID to the controller's register
+            self._write_register(self.registers["device_id"]["address"], register_id)
+            self.slave_id = new_id
+            logger.info("Slave ID successfully updated to %d", self.slave_id)
+
+        except Exception as e:
+            logger.error("Failed to update slave ID: %s", e)
+
+
+def setup_args():
+    parser = argparse.ArgumentParser(
+        description="CLI Script for controlling the Motor Driver over Modbus RTU"
     )
 
-    # Connect
-    if not controller.connect():
-        sys.exit(1)
+    # Device profile selection
+    parser.add_argument(
+        "--device",
+        type=str,
+        default="rmcs-3001",
+        help="Profile matching device configuration (default: rmcs-3001)",
+    )
+    parser.add_argument(
+        "-v",
+        "--verbose",
+        action="store_true",
+        default=False,
+        help="Verbose output for debugging",
+    )
 
+    # Connection Parameters
+    serial_group = parser.add_argument_group("Serial / Modbus Connection")
+    serial_group.add_argument(
+        "-p",
+        "--port",
+        type=str,
+        required=True,
+        help="Serial port (e.g., COM3, /dev/ttyUSB0)",
+    )
+    serial_group.add_argument(
+        "-id",
+        "--slave-id",
+        type=int,
+        default=1,
+        choices=range(1, 248),
+        metavar="[1-247]",
+        help="Modbus Slave Address ID (1-247)",
+    )
+    serial_group.add_argument(
+        "-nid",
+        "--new-id",
+        type=int,
+        choices=range(1, 248),
+        metavar="[1-247]",
+        help="New Modbus Slave Address ID (1-247) for reconfiguration",
+    )
+
+    # Motor Operations
+    control_group = parser.add_argument_group("Motor Control Operations")
+    control_group.add_argument(
+        "-m",
+        "--mode",
+        type=int,
+        choices=[0, 1, 2, 3, 4],
+        default=0,
+        help="0: Analog Open, 1: Digital Closed, 2: Digital Open, 3: Analog Closed, 4: Analog Closed Min Speed",
+    )
+    control_group.add_argument(
+        "-a",
+        "--action",
+        type=int,
+        choices=[0, 1, 2],
+        help="0: Disable, 1: Enable, 2: Brake",
+    )
+    control_group.add_argument(
+        "-d",
+        "--direction",
+        type=int,
+        choices=[0, 1],
+        help="0: Clockwise (CW), 1: Counter-Clockwise (CCW)",
+    )
+
+    # Target Modbus Register Values
+    param_group = parser.add_argument_group("Target Register Parameters")
+    param_group.add_argument(
+        "-s",
+        "--speed",
+        type=int,
+        metavar="[0-32767]",
+        help="Target Speed register value (Hz for Mode 1, or PWM [0-32767] for Modes 2/3)",
+    )
+    param_group.add_argument(
+        "-l",
+        "--limit",
+        type=int,
+        metavar="[-32767 to 32767]",
+        help="Movement/Distance length limit (Valid range: -32767 to 32767, Mode 1 only)",
+    )
+
+    return parser.parse_args()
+
+
+# Main Execution Logic
+if __name__ == "__main__":
     try:
-        # Always read all registers first (for status)
-        controller.read_all_registers()
+        # Parse arguments
+        args = setup_args()
 
-        # Perform requested action
-        if args.action == "read":
-            # Already done
-            pass
-        elif args.action == "enable":
-            controller.execute_command("enable_motor")
-        elif args.action == "brake":
-            controller.execute_command("brake_motor")
-        elif args.action == "stop":
-            controller.execute_command("stop_motor")
-        elif args.action == "set_speed_open":
-            if args.speed is None:
-                logger.error("--speed required for set_speed_open")
-                sys.exit(1)
-            controller.execute_command("set_speed_open_loop", speed=args.speed)
-        elif args.action == "set_speed_closed":
-            if args.speed is None:
-                logger.error("--speed required for set_speed_closed")
-                sys.exit(1)
-            controller.execute_command("set_speed_closed_loop", speed_hz=args.speed)
-        elif args.action == "set_mode_analog_open":
-            controller.execute_command("set_mode_analog_open_loop")
-        elif args.action == "set_mode_digital_closed":
-            controller.execute_command("set_mode_digital_closed_loop")
-        elif args.action == "set_mode_digital_open":
-            controller.execute_command("set_mode_digital_open_loop")
-        elif args.action == "set_current_limit":
-            if args.current is None:
-                logger.error("--current required for set_current_limit")
-                sys.exit(1)
-            controller.execute_command("set_current_limit", amps=args.current)
-        elif args.action == "save_config":
-            # Note: save_configuration requires current slave ID to be known
-            # We'll pass current slave ID from controller instance
-            controller.execute_command("save_configuration", current_slave_id=controller.slave_id)
-        elif args.action == "sequence":
-            logger.info("Running custom travel sequence")
-            controller.execute_command("set_speed_frequency", speed=40)
-            controller.execute_command("set_travel_distance", distance=100)
-            controller.execute_command("enable_forward_257")
-            time.sleep(3)
-            controller.execute_command("brake_motor")
+        # Load configuration
+        config = load_config()
+        comm = config[args.device]["communication"]
+        registers = config[args.device]["registers"]
 
-            controller.execute_command("set_speed_frequency", speed=40)
-            controller.execute_command("set_travel_distance", distance=100)
-            controller.execute_command("enable_reverse_265")
+        # Validate device configuration
+        if not config:
+            logger.error("Configuration missing for device '%s'", args.device)
+            sys.exit(1)
+
+        if not comm or not registers:
+            logger.error("Incomplete configuration for device '%s'", args.device)
+            sys.exit(1)
+
+        # Validate serial port availability
+        if not check_port_available(args.port):
+            logger.error(
+                "Serial port '%s' is not available or cannot be opened", args.port
+            )
+            sys.exit(1)
+
+        # Bind the device to the controller class
+        if args.device == "rmcs-3001":
+            controller = RhinoRMCS3001(args.port, args.slave_id, config[args.device])
+            # Additional device profiles can be added here with elif statements
+
         else:
-            logger.error(f"Unknown action: {args.action}")
+            logger.error("Unsupported device profile: '%s'", args.device)
+            sys.exit(1)
+
+        # Attempt to connect to the controller
+        if not controller.connect():
+            sys.exit(1)
+
+        # Update slave ID if requested
+        if args.new_id is not None:
+            logger.info(
+                "Attempting to change slave ID from %d to %d",
+                args.slave_id,
+                args.new_id,
+            )
+            controller.set_slave_id(args.new_id)
+            sys.exit(0)
+
+        # Print initial status if verbose
+        if args.verbose:
+            controller.print_verbose()
+
+        # Send movement limit command if provided
+        if args.limit is not None:
+            controller.set_limit(limit=args.limit, mode=args.mode)
+
+        # Send speed command if provided
+        if args.speed is not None:
+            controller.set_speed(speed=args.speed, mode=args.mode)
+
+        # Send control command based on user input
+        controller.set_control(
+            mode=args.mode,
+            enable=(args.action in (1, 2)),
+            brake=(args.action == 2),
+            direction_ccw=(args.direction == 1),
+        )
+
+        # Print current status if verbose
+        if args.verbose:
+            controller.print_verbose()
 
     except KeyboardInterrupt:
-        logger.info("Interrupted by user")
+        logger.info("Interrupted by user, exiting!")
+
+    except Exception as e:
+        logger.error("An unexpected error occurred: %s", e)
 
     finally:
-        controller.close()
-
-if __name__ == "__main__":
-    main()
-
+        # Ensure the connection is closed on exit
+        if "controller" in locals():
+            controller.close()

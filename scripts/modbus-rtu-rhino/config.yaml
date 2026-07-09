@@ -1,0 +1,51 @@
+rmcs-3001:
+    desc: "Rhino RMCS-3001-V2 3-Phase BLDC motor controller with RTU Modbus"
+
+    communication:
+        baudrate: 9600
+        parity: "N"
+        stop_bits: 1
+        data_bits: 8
+        timeout: 1
+
+    registers:
+        device_id:
+            address: 0x00 # Modbus Decimal: 40001
+            access: "rw"
+            range: [1, 247] # 0x01 to 0xF7
+            description: "Write Modbus slave address to EEPROM"
+
+        control_mode:
+            address: 0x02 # Modbus Decimal: 40003
+            access: "rw"
+            description: "Bits 15:8 Mode byte (0-4), Bits 7:0 Control byte (Direction, Brake, Enable)"
+
+        pwm:
+            address: 0x04 # Modbus Decimal: 40005
+            access: "rw"
+            range: [0, 4800] # 0000-12C0 in HEX
+            description: "Set PWM for digital open, analog closed & analog minimum speed control mode"
+
+        frequency:
+            address: 0x06 # Modbus Decimal: 40007
+            access: "rw"
+            range: [0, 400] # 0000-0190 in HEX
+            description: "Set frequency (Hz) for digital closed loop mode"
+
+        speed_feedback:
+            address: 0x08 # Modbus Decimal: 40009
+            access: "r"
+            range: [0, 65535] # 0000-FFFF in HEX
+            description: "Speed feedback register, Current Speed of motor (Hz)"
+
+        current_feedback:
+            address: 0x0A # Modbus Decimal: 40011
+            access: "r"
+            range: [0, 65535] # 0000-FFFF in HEX
+            description: "Current feedback register, Current drawn value (A)"
+
+        movement_limit:
+            address: 0x0C # Modbus Decimal: 40013
+            access: "rw"
+            range: [-32767, 32767]
+            description: "Digital closed, if motion is exceed the motor will auto enter brake condition"
