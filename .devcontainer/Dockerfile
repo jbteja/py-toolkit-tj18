@@ -1,4 +1,4 @@
-FROM mcr.microsoft.com/devcontainers/python:3.12-bookworm
+FROM python:3.13-slim
 
 # Install or Update system utilities
 RUN apt-get update \

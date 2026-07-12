@@ -12,9 +12,9 @@
             "configureZshAsDefaultShell": "true",
             "installOhMyZsh": "true",
             "installZshPlugins": [
-                 "zsh-autosuggestions",
-                 "zsh-syntax-highlighting",
-                 "git"
+                "zsh-autosuggestions",
+                "zsh-syntax-highlighting",
+                "git"
             ]
         },
         "ghcr.io/devcontainer-community/devcontainer-features/astral.sh-uv": {
@@ -30,30 +30,11 @@
                 "charliermarsh.ruff",
                 "editorconfig.editorconfig",
                 "streetsidesoftware.code-spell-checker",
-                "DavidAnson.vscode-markdownlint"
+                "davidanson.vscode-markdownlint"
             ],
             "settings": {
                 "terminal.integrated.defaultProfile.linux": "zsh",
-                "python.defaultInterpreterPath": "${containerEnv:PYTHON_PATH}",
-                "python.analysis.diagnosticMode": "openFilesOnly",
-                "[python]": {
-                    "editor.defaultFormatter": "charliermarsh.ruff",
-                    "editor.formatOnSave": true,
-                    "editor.codeActionsOnSave": {
-                        "source.fixAll": "explicit",
-                        "source.organizeImports": "explicit"
-                    }
-                },
-                "[markdown]": {
-                    "editor.defaultFormatter": "DavidAnson.vscode-markdownlint",
-                    "editor.formatOnSave": true,
-                    "editor.codeActionsOnSave": {
-                        "source.fixAll.markdownlint": "explicit"
-                    }
-                },
-                "markdownlint.config": {
-                    "MD033": false
-                }
+                "python.defaultInterpreterPath": "${containerEnv:PYTHON_PATH}"
             }
         }
     },
