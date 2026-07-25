@@ -49,3 +49,44 @@ rmcs-3001:
             access: "rw"
             range: [-32767, 32767]
             description: "Digital closed, if motion is exceed the motor will auto enter brake condition"
+
+rmcs-6611:
+    desc: "Rhino RMCS-6611 24-48V DC, 750W BLDC Motor Driver with RTU Modbus"
+
+    communication:
+        baudrate: 9600
+        parity: "N"
+        stop_bits: 1
+        data_bits: 8
+        timeout: 1
+
+    registers:
+        enable_modbus:
+            address: 0xB6 # Modbus Decimal: 182
+            access: "rw"
+            range: [1, 2] # 1 = Enable RS-485 Control, 2 = Disable RS-485 Control
+
+        control_motor:
+            address: 0x66 # Modbus Decimal: 102
+            access: "rw"
+            range: [0, 3] # 0 = Stop/Disable, 1 = Forward, 2 = Reverse, 3 = Brake
+
+        set_speed:
+            address: 0x56 # Modbus Decimal: 86
+            access: "rw"
+            range: [0, 6000] # Set Motor Speed in RPM
+
+        speed_feedback:
+            address: 0x5F # Modbus Decimal: 95
+            access: "r"
+            range: [0, 6000] # Actual motor speed feedback in RPM
+
+        current_feedback:
+            address: 0xC6 # Modbus Decimal: 198
+            access: "r"
+            range: [0, 50] # Actual Current feedback in A * 10
+
+        voltage_feedback:
+            address: 0xC8 # Modbus Decimal: 200
+            access: "r"
+            range: [0, 500] # Actual Voltage feedback in V * 10

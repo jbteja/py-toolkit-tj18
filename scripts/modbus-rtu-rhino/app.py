@@ -133,6 +133,38 @@ class BaseController:
             return val - 65536
         return val
 
+    def write_safe(
+        self,
+        reg_name: str,
+        value: int,
+        verbose: bool = False,
+        reg_data: dict[str, Any] | None = None,
+    ):
+        """Write a register with optional before/after read logging"""
+        reg_data = reg_data or self.registers.get(reg_name)
+        if not reg_data or "address" not in reg_data:
+            logger.error(
+                "Register definition for '%s' missing in config.yaml", reg_name
+            )
+            return None
+
+        address = reg_data["address"]
+
+        if verbose:
+            self.read_and_print_register(reg_name, reg_data)
+
+        response = self._write_register(address, value)
+        if response and response.isError():
+            logger.error("Failed to set %s on address 0x%02X", reg_name, address)
+            return None
+
+        logger.info("Setting %s to %s (0x%04X)", reg_name, value, value)
+
+        if verbose:
+            self.read_and_print_register(reg_name, reg_data)
+
+        return response
+
     def read_and_print_register(self, reg_name: str, reg_data: dict[str, Any]):
         """Read a single register and log its value in a readable format."""
         address = reg_data.get("address")
@@ -146,7 +178,7 @@ class BaseController:
                 raw_val = response.registers[0]
                 val = self.parse_signed_value(raw_val, reg_data)
                 display_name = reg_name.replace("_", " ").title()
-                logger.info(f"• {display_name} Value: {val} (Hex: 0x{raw_val:04X})")
+                logger.info(f"{display_name} Value: {val} (Hex: 0x{raw_val:04X})")
                 logger.debug(f"  - Desc:  {reg_data.get('description', '')}")
                 return val
 
@@ -250,16 +282,16 @@ class RhinoRMCS3001(BaseController):
                 args.slave_id,
                 args.new_id,
             )
-            self.set_slave_id(args.new_id)
+            self.set_slave_id(args.new_id, verbose=args.verbose)
             sys.exit(0)
 
         # Set movement limit
         if args.limit is not None:
-            self.set_limit(limit=args.limit, mode=args.mode)
+            self.set_limit(limit=args.limit, mode=args.mode, verbose=args.verbose)
 
         # Set speed
         if args.speed is not None:
-            self.set_speed(speed=args.speed, mode=args.mode)
+            self.set_speed(speed=args.speed, mode=args.mode, verbose=args.verbose)
 
         # Set control packet
         if args.action is not None or args.direction is not None:
@@ -268,7 +300,18 @@ class RhinoRMCS3001(BaseController):
                 enable=(args.action in (1, 2)),
                 brake=(args.action == 2),
                 direction_ccw=(args.direction == 1),
+                verbose=args.verbose,
             )
+
+        if args.verbose and not any(
+            [
+                args.new_id is not None,
+                args.limit is not None,
+                args.speed is not None,
+                args.action is not None or args.direction is not None,
+            ]
+        ):
+            self.print_verbose()
 
     def set_control(
         self,
@@ -276,6 +319,7 @@ class RhinoRMCS3001(BaseController):
         enable: bool = True,
         brake: bool = False,
         direction_ccw: bool = False,
+        verbose: bool = False,
     ):
         """Builds the 16-bit packet and writes it to the register"""
         # Control Byte (Lower 8 bits)
@@ -294,21 +338,23 @@ class RhinoRMCS3001(BaseController):
 
         # Final 16-bit payload
         payload = mode_byte | control_byte
-        address = self.config["registers"]["control_mode"]["address"]
+        reg_data = self.config["registers"].get("control_mode", {})
 
-        logger.debug(f"Control packet: 0x{payload:04X} to address 0x{address:02X}")
-        logger.info(
-            f"Setting -> m: {mode}, e: {enable}, brk: {brake}, dir: {direction_ccw}"
+        logger.debug(
+            "Control packet: 0x%04X to address 0x%02X",
+            payload,
+            reg_data.get("address", 0x00),
         )
-        response = self._write_register(address, payload)
+        logger.info(
+            "Setting -> m: %s, e: %s, brk: %s, dir: %s",
+            mode,
+            enable,
+            brake,
+            direction_ccw,
+        )
+        self.write_safe("control_mode", payload, verbose, reg_data)
 
-        if response.isError():
-            logger.error("Failed to send control command: %s", response)
-
-        else:
-            logger.info("Successfully sent control command")
-
-    def set_speed(self, speed: int, mode: int):
+    def set_speed(self, speed: int, mode: int, verbose: bool = False):
         """
         Sets the target speed or PWM value based on operating mode
         - Mode 1 (Digital Closed Loop Mode): Writes to the frequency register (0x06)
@@ -342,14 +388,9 @@ class RhinoRMCS3001(BaseController):
             f"Writing {speed} value (Hex: 0x{payload:04X}) to '{reg_key}' register at 0x{address:02X}"
         )
 
-        response = self._write_register(address, payload)
-        if response and response.isError():
-            logger.error(f"Failed to set target speed on address 0x{address:02X}")
+        self.write_safe(reg_key, payload, verbose, reg_data or {"address": address})
 
-        else:
-            logger.info(f"Successfully sent target speed/value to {speed}")
-
-    def set_limit(self, limit: int, mode: int):
+    def set_limit(self, limit: int, mode: int, verbose: bool = False):
         """
         Sets the movement or distance length limit register (0x0C)
         Converts negative integers to 16-bit unsigned representations
@@ -375,18 +416,16 @@ class RhinoRMCS3001(BaseController):
             f"Writing limit {limit} (Unsigned Hex: 0x{payload:04X}) to address 0x{address:02X}"
         )
 
-        response = self._write_register(address, payload)
-        if response and response.isError():
-            logger.error(f"Failed to set movement limit on address 0x{address:02X}")
-        else:
-            logger.info("Successfully sent movement limit to %d", limit)
+        self.write_safe(
+            "movement_limit", payload, verbose, reg_data or {"address": address}
+        )
 
-    def set_slave_id(self, new_id: int):
+    def set_slave_id(self, new_id: int, verbose: bool = False):
         """Updates the slave ID for future transactions"""
         try:
             if new_id == self.slave_id:
                 logger.info(
-                    "New ID is same as the current ID (%d), no change made", new_id
+                    "New ID is same as the current ID (%d), no change made!", new_id
                 )
                 return
 
@@ -406,7 +445,12 @@ class RhinoRMCS3001(BaseController):
             register_id = (new_id << 8) | 0xFF
 
             # Write the new slave ID to the controller's register
-            self._write_register(self.registers["device_id"]["address"], register_id)
+            self.write_safe(
+                "device_id",
+                register_id,
+                verbose,
+                self.registers.get("device_id", {}),
+            )
             self.slave_id = new_id
             logger.info("Slave ID successfully updated to %d", self.slave_id)
 
@@ -465,6 +509,10 @@ class RhinoRMCS6611(BaseController):
             if not reg_data:
                 continue
 
+            if "r" not in reg_data.get("access", ""):
+                logger.warning("Register can't be read, skipping!")
+                continue
+
             address = reg_data.get("address")
             if address is None:
                 continue
@@ -500,74 +548,28 @@ class RhinoRMCS6611(BaseController):
 
         # Enable modbus control if requested
         if args.enable_modbus is not None:
-            reg_name = "enable_modbus"
-            reg_data = self.registers[reg_name]
-            address = reg_data["address"]
-
-            # Print initial status
-            if args.verbose:
-                self.read_and_print_register(reg_name, reg_data)
-
-            response = self._write_register(address, args.enable_modbus)
-            if response and response.isError():
-                logger.error(
-                    f"Failed to set enabled register on address 0x{address:02X}"
-                )
-
-            else:
-                logger.info(f"Successfully set enable register to {args.enable_modbus}")
-
-            # Read back and print after updating
-            if args.verbose:
-                self.read_and_print_register(reg_name, reg_data)
+            self.write_safe("enable_modbus", args.enable_modbus, args.verbose)
 
         # Set speed
         if args.speed is not None:
-            reg_name = "set_speed"
-            reg_data = self.registers[reg_name]
-            address = reg_data["address"]
-
-            # Print initial status
-            if args.verbose:
-                self.read_and_print_register(reg_name, reg_data)
-
-            response = self._write_register(address, args.speed)
-            if response and response.isError():
-                logger.error(f"Failed to set speed register on address 0x{address:02X}")
-
-            else:
-                logger.info(f"Successfully set target speed to {args.speed} RPM")
-
-            # Read back and print after updating
-            if args.verbose:
-                self.read_and_print_register(reg_name, reg_data)
+            self.write_safe("set_speed", args.speed, args.verbose)
 
         # Set motion control
         if args.action is not None:
-            reg_name = "control_motor"
-            reg_data = self.registers[reg_name]
-            address = reg_data["address"]
-
-            # Print initial status
-            if args.verbose:
-                self.read_and_print_register(reg_name, reg_data)
-
-            response = self._write_register(address, args.action)
-            if response and response.isError():
-                logger.error(
-                    f"Failed to set control register on address 0x{address:02X}"
-                )
-
-            else:
-                logger.info(f"Successfully set motion state to {args.action}")
-
-            # Read back and print after updating
-            if args.verbose:
-                self.read_and_print_register(reg_name, reg_data)
+            self.write_safe("control_motor", args.action, args.verbose)
 
         # Read feedback values if requested
         if args.read:
             self.read_feedback()
+
+        # If verbose mode requested without specific write actions or explicit read, dump all registers
+        if args.verbose and (
+            args.enable_modbus is None
+            and args.speed is None
+            and args.action is None
+            and not args.read
+        ):
+            self.print_verbose()
 
 
 # ==============================================================================
@@ -601,6 +603,7 @@ def setup_args() -> argparse.Namespace:
 
         # Global serial / connection arguments added to each subcommand
         conn_group = subparser.add_argument_group("Modbus Connection Settings")
+
         conn_group.add_argument(
             "-p",
             "--port",
@@ -608,6 +611,7 @@ def setup_args() -> argparse.Namespace:
             required=True,
             help="Serial port (e.g. COM3, /dev/ttyUSB0)",
         )
+
         conn_group.add_argument(
             "-i",
             "--slave-id",
@@ -617,6 +621,7 @@ def setup_args() -> argparse.Namespace:
             metavar="[1-247]",
             help="Modbus Slave ID (Default: 1)",
         )
+
         conn_group.add_argument(
             "-v",
             "--verbose",
@@ -634,25 +639,26 @@ def setup_args() -> argparse.Namespace:
 # MAIN EXECUTION
 # ==============================================================================
 if __name__ == "__main__":
+    controller = None
     try:
-        # Parse arguments and load configuration
         args = setup_args()
         config = load_config()
 
         # Validate device configuration
+        if not config:
+            logger.error("Configuration file is empty or missing content")
+            sys.exit(1)
+
         if args.device not in config:
             logger.error("Configuration missing for device profile '%s'", args.device)
             sys.exit(1)
 
-        if not config:
-            logger.error("Configuration missing for device '%s'", args.device)
-            sys.exit(1)
-
-        if (
-            not config[args.device]["communication"]
-            or not config[args.device]["registers"]
-        ):
-            logger.error("Incomplete configuration for device '%s'", args.device)
+        device_config = config[args.device]
+        if not device_config.get("communication") or not device_config.get("registers"):
+            logger.error(
+                "Incomplete configuration ('communication' or 'registers' missing) for device '%s'",
+                args.device,
+            )
             sys.exit(1)
 
         # Validate serial port availability
@@ -681,5 +687,5 @@ if __name__ == "__main__":
 
     finally:
         # Ensure the connection is closed on exit
-        if "controller" in locals():
+        if controller:
             controller.close()
