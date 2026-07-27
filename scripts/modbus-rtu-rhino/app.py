@@ -3,6 +3,7 @@
 import argparse
 import inspect
 import sys
+import time
 from pathlib import Path
 from typing import Any
 
@@ -125,6 +126,18 @@ class BaseController:
         kwargs = {self._slave_param: self.slave_id}
         return self.client.write_register(address=address, value=value, **kwargs)
 
+    def read_safe(
+        self, address: int, count: int = 1, retries: int = 3, delay: float = 0.25
+    ):
+        """Read registers with a small retry loop to handle controller latency."""
+        for attempt in range(1, retries + 1):
+            response = self._read_registers(address, count=count)
+            if response and not response.isError():
+                return response
+            if attempt < retries:
+                time.sleep(delay)
+        return response
+
     def parse_signed_value(self, val: int, reg_data: dict[str, Any]) -> int:
         """Converts unsigned 16-bit words to signed integers if required by config"""
         reg_range = reg_data.get("range", [])
@@ -136,7 +149,7 @@ class BaseController:
     def write_safe(
         self,
         reg_name: str,
-        value: int,
+        value: int = 0,
         verbose: bool = False,
         reg_data: dict[str, Any] | None = None,
     ):
@@ -152,15 +165,21 @@ class BaseController:
 
         if verbose:
             self.read_and_print_register(reg_name, reg_data)
+            time.sleep(0.1)
 
         response = self._write_register(address, value)
-        if response and response.isError():
+        if response is None:
+            logger.error("Write failed for %s at address 0x%02X", reg_name, address)
+            return None
+
+        if response.isError():
             logger.error("Failed to set %s on address 0x%02X", reg_name, address)
             return None
 
         logger.info("Setting %s to %s (0x%04X)", reg_name, value, value)
 
         if verbose:
+            time.sleep(0.25)
             self.read_and_print_register(reg_name, reg_data)
 
         return response
@@ -172,7 +191,7 @@ class BaseController:
             return None
 
         try:
-            response = self._read_registers(address, 1)
+            response = self.read_safe(address, 1)
 
             if response and not response.isError():
                 raw_val = response.registers[0]
