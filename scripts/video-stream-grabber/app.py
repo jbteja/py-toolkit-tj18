@@ -3,6 +3,7 @@
 import shutil
 import subprocess
 import sys
+import time
 from pathlib import Path
 
 import yaml
@@ -55,12 +56,13 @@ def run_command(cmd, description):
     Raises:
         subprocess.CalledProcessError: If the command fails to execute.
     """
-    logger.info("Starting task: %s", description)
+    logger.info("Task: %s", description)
 
     try:
         # shell=False is used for security to prevent shell injection
         subprocess.run(cmd, check=True, capture_output=True, text=True)
         logger.info("Completed: %s", description)
+        time.sleep(3)  # brief pause to avoid overwhelming the system
 
     except subprocess.CalledProcessError as e:
         logger.warning("Failed: %s", description)
@@ -102,16 +104,16 @@ def process_video_library(config, out_dir, bin_path):
         # --- Path Setup ---
         if capture_raw:
             # Per instructions: raw capture ignores settings and uses .ts
-            extension = ".ts"
+            extension = "ts"
             description = f"Capturing raw stream for '{title}'"
 
         else:
-            extension = transcoding_cfg.get("extension", ".mp4")
-            description = f"Transcoding '{title}' to {extension}"
+            extension = transcoding_cfg.get("extension", "mp4")
+            description = f"Transcoding '{title}' to {extension.upper()}"
 
         # Clean title to ensure it's a valid filename and build path
         safe_title = "".join(x for x in title if x.isalnum() or x in "._- ")
-        output_file = out_dir / f"{safe_title}{extension}"
+        output_file = out_dir / f"{safe_title.capitalize()}.{extension}"
 
         # --- Command Construction ---
         if capture_raw:
