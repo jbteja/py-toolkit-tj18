@@ -8,11 +8,11 @@ paths:
 # Set 'capture_raw' to true for fast, lossless raw stream.
 # If false, it will use the transcoding settings below.
 transcoding:
-    capture_raw: false      # Fast, lossless stream copy (no re-encoding)
-    extension: ".mp4"
-    video_codec: "libx265"  # HEVC for high compression
-    audio_codec: "copy"     # 'copy' avoids re-encoding or set to 'aac'
-    crf_value: 28   # (e.g. 24) = Higher Quality, (e.g. 32) = Lower Quality
+    capture_raw: true # Fast, lossless stream copy (no re-encoding)
+    extension: "mp4"
+    video_codec: "libx265" # HEVC for high compression
+    audio_codec: "copy" # 'copy' avoids re-encoding or set to 'aac'
+    crf_value: 24 # (e.g. 24) = Higher Quality, (e.g. 32) = Lower Quality
 
 # --- Block 3: Video Library ---
 # List of videos to download/convert

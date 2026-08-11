@@ -62,7 +62,7 @@ def run_command(cmd, description):
         # shell=False is used for security to prevent shell injection
         subprocess.run(cmd, check=True, capture_output=True, text=True)
         logger.info("Completed: %s", description)
-        time.sleep(3)  # brief pause to avoid overwhelming the system
+        time.sleep(15)  # brief pause to avoid overwhelming the system
 
     except subprocess.CalledProcessError as e:
         logger.warning("Failed: %s", description)
@@ -105,7 +105,7 @@ def process_video_library(config, out_dir, bin_path):
         if capture_raw:
             # Per instructions: raw capture ignores settings and uses .ts
             extension = "ts"
-            description = f"Capturing raw stream for '{title}'"
+            description = f"Capturing '{title}'"
 
         else:
             extension = transcoding_cfg.get("extension", "mp4")
@@ -113,7 +113,7 @@ def process_video_library(config, out_dir, bin_path):
 
         # Clean title to ensure it's a valid filename and build path
         safe_title = "".join(x for x in title if x.isalnum() or x in "._- ")
-        output_file = out_dir / f"{safe_title.capitalize()}.{extension}"
+        output_file = out_dir / f"{safe_title}.{extension}"
 
         # --- Command Construction ---
         if capture_raw:
